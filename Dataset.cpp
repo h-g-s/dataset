@@ -31,67 +31,15 @@ using namespace std;
 
 
 // trim from start (in place)
-static inline void ltrim(std::string &s) {
-    s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](int ch) {
-                return !std::isspace(ch);
-                }));
-}
+static inline void ltrim(std::string &s);
 
 // trim from end (in place)
-static inline void rtrim(std::string &s) {
-    s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) {
-                return !std::isspace(ch);
-                }).base(), s.end());
-}
+static inline void rtrim(std::string &s);
 
 // trim from both ends (in place)
-static inline void trim(std::string &s) {
-    ltrim(s);
-    rtrim(s);
-}
+static inline void trim(std::string &s);
 
-enum Datatype str_type(const string &str)
-{
-    bool hasNum = false;
-    int nPoints = 0;
-
-    for ( size_t i=0 ; (i<str.size()) ; ++i )
-    {
-        if (str[i] == '.') 
-            ++nPoints;
-        else
-        {
-            if (isdigit(str[i]))
-                hasNum = true;
-            else
-                return String;
-        }
-    }
-
-    if (hasNum)
-    {
-        switch (nPoints)
-        {
-            case 0:
-            {
-                return Integer;
-                break;
-            }
-            case 1:
-            {
-                return Float;
-                break;
-            }
-            default:
-            {
-                return String;
-                break;
-            }
-        }
-    }
-    
-    return Empty;
-}
+enum Datatype str_type(const string &str);
 
 class CSVRow
 {
@@ -206,6 +154,9 @@ Dataset::Dataset(const char *fileName) :
                 cout << "\t" << this->headers_[i] << endl;
     }
     
+    this->cTypes_ = vector<Datatype>(n, Empty);
+    this->cSizes_ = vector<size_t>(n, 0);
+
     size_t idx = 0;
     for ( size_t i=0 ; (i<n); ++i )
     {
@@ -264,7 +215,7 @@ Dataset::Dataset(const char *fileName) :
         hSize /= 1024;
         unity = "Gb";
     }
-    cout << "dataset will ocupy " << setprecision(2) << fixed << hSize << " " << unity;
+    cout << "dataset will ocupy " << setprecision(2) << fixed << hSize << " " << unity << endl;
 
     this->data = (char *)malloc(dataSize);
     if (this->data==nullptr)
@@ -371,4 +322,68 @@ Dataset::~Dataset()
 {
     if (this->data)
         free(this->data);
+}
+
+
+// trim from start (in place)
+static inline void ltrim(std::string &s) {
+    s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](int ch) {
+                return !std::isspace(ch);
+                }));
+}
+
+// trim from end (in place)
+static inline void rtrim(std::string &s) {
+    s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) {
+                return !std::isspace(ch);
+                }).base(), s.end());
+}
+
+// trim from both ends (in place)
+static inline void trim(std::string &s) {
+    ltrim(s);
+    rtrim(s);
+}
+
+enum Datatype str_type(const string &str)
+{
+    bool hasNum = false;
+    int nPoints = 0;
+
+    for ( size_t i=0 ; (i<str.size()) ; ++i )
+    {
+        if (str[i] == '.')
+            ++nPoints;
+        else
+        {
+            if (isdigit(str[i]))
+                hasNum = true;
+            else
+                return String;
+        }
+    }
+
+    if (hasNum)
+    {
+        switch (nPoints)
+        {
+            case 0:
+            {
+                return Integer;
+                break;
+            }
+            case 1:
+            {
+                return Float;
+                break;
+            }
+            default:
+            {
+                return String;
+                break;
+            }
+        }
+    }
+
+    return Empty;
 }
