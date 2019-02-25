@@ -11,6 +11,9 @@
 #include <vector>
 #include <set>
 #include <cstdlib>
+#include <cstring>
+#include <cassert>
+#include <unordered_set>
 
 using namespace std;
 
@@ -23,6 +26,8 @@ using namespace std;
 #include <sstream>
 #include <vector>
 #include <string>
+#include <iomanip>
+#include <chrono>
 
 
 // trim from start (in place)
@@ -49,7 +54,6 @@ enum Datatype str_type(const string &str)
 {
     bool hasNum = false;
     int nPoints = 0;
-    bool hasAlpha = false;
 
     for ( size_t i=0 ; (i<str.size()) ; ++i )
     {
@@ -134,6 +138,7 @@ std::istream& operator>>(std::istream& str, CSVRow& data)
 Dataset::Dataset(const char *fileName) :
     data(nullptr)
 {
+    chrono::high_resolution_clock::time_point t1 = chrono::high_resolution_clock::now();
     ifstream ifile;
     ifile.open(fileName, ios::in);
 
@@ -143,15 +148,15 @@ Dataset::Dataset(const char *fileName) :
 
     // reading header
     ifile >> row;
-    this->headers = vector< string >(row.size());
+    this->headers_ = vector< string >(row.size());
     for (size_t i=0 ; (i<row.size()) ; ++i )
     {
-        this->headers[i] = row[i];
-        trim(this->headers[i]);
+        this->headers_[i] = row[i];
+        trim(this->headers_[i]);
     }
     
-    size_t n = this->headers.size();
-    vector<set<string>> difValues = vector<set<string>>(n, set<string>());
+    size_t n = this->headers_.size();
+    vector<unordered_set<string>> difValues = vector<unordered_set<string>>(n, unordered_set<string>());
     int line = 1;
 
     vector<vector<size_t>> colTypes = vector<vector<size_t>>(n, vector<size_t>(N_DATA_TYPES, 0));
@@ -184,15 +189,21 @@ Dataset::Dataset(const char *fileName) :
     
     // checking columns that can be safely deleted
     std::vector< bool > deleteColumn = vector< bool >(n, false);
+    size_t nDel = 0;
     for ( size_t i=0 ; (i<difValues.size()) ; ++i )
     {
-        size_t nDel = 0;
-        cout << difValues[i].size() << endl;
         if (difValues[i].size()<=1)
         {
             deleteColumn[i] = true;
             nDel++;
         }
+    }
+    if (nDel)
+    {
+        cout << "the following columns have always the same value and will be deleted:" << endl;
+        for ( size_t i=0 ; (i<n) ; ++i )
+            if (deleteColumn[i])
+                cout << "\t" << this->headers_[i] << endl;
     }
     
     size_t idx = 0;
@@ -202,42 +213,158 @@ Dataset::Dataset(const char *fileName) :
             continue;
         if (colTypes[i][String])
         {
-            this->cTypes[idx] = String;
-            this->cSizes[idx] = colSizes[i]+1;
+            this->cTypes_[idx] = String;
+            this->cSizes_[idx] = colSizes[i]+1;
         }
         else
         {
             if (colTypes[i][Float])
             {
-                this->cTypes[idx] = Float;
-                this->cSizes[idx] = sizeof(double);
+                this->cTypes_[idx] = Float;
+                this->cSizes_[idx] = sizeof(double);
             }
             else
             {
-                this->cTypes[idx] = Integer;
-                this->cSizes[idx] = sizeof(int);
+                this->cTypes_[idx] = Integer;
+                this->cSizes_[idx] = sizeof(int);
             }
         }
 
-        this->headers[idx] = this->headers[i];
-        this->rowSize += this->cSizes[idx];
+        this->headers_[idx] = this->headers_[i];
+        this->rowSize += this->cSizes_[idx];
         ++idx;
     }
     
     n = idx;
-    this->headers.resize(n);
-    this->cTypes.resize(n);
-    this->cSizes.resize(n);
+    this->headers_.resize(n);
+    this->cTypes_.resize(n);
+    this->cSizes_.resize(n);
+    this->cShift_ = vector< size_t >(this->cSizes_.size(), 0);
+    for (size_t i=1 ; (i<this->cSizes_.size()) ; ++i)
+        this->cShift_[i] = this->cShift_[i-1] + this->cSizes_[i-1];
 
-    this->rows = line;
+
+    this->rows_ = line;
     size_t dataSize = this->rowSize*line;
-    this->data = malloc(dataSize);
+
+    string unity = "bytes";
+    double hSize = dataSize;
+    if (hSize>1024)
+    {
+        hSize /= 1024;
+        unity = "Kb";
+    }
+    if (hSize>1024)
+    {
+        hSize /= 1024;
+        unity = "Mb";
+    }
+    if (hSize>1024)
+    {
+        hSize /= 1024;
+        unity = "Gb";
+    }
+    cout << "dataset will ocupy " << setprecision(2) << fixed << hSize << " " << unity;
+
+    this->data = (char *)malloc(dataSize);
     if (this->data==nullptr)
     {
         cerr << "No memory for dataset." << endl;
         abort();
     }
 
+    ifile.open(fileName, ios::in);
+    ifile >> row;
+
+    size_t r = 0;
+    while (ifile >> row)
+    {
+        size_t idx = 0;
+        for ( size_t i=0 ; i<row.size(); ++i )
+        {
+            if (idx==this->headers_.size())
+            {
+                cerr << "line " << r+2 << " contains too many columns." << endl;
+                abort();
+            }
+            if (deleteColumn[i])
+                continue;
+
+            this->cell_set(r, idx, row[i]);
+            ++idx;
+        }
+        ++r;
+    }
+    ifile.close();
+    chrono::high_resolution_clock::time_point t2 = chrono::high_resolution_clock::now();
+    chrono::duration<double> time_span = chrono::duration_cast<chrono::duration<double>>(t2 - t1);
+    cout << "dataset was read in " << setprecision(3) << time_span.count() << " seconds." << endl;
+}
+
+void Dataset::cell_set(size_t row, size_t col, const std::string &str)
+{
+    assert(row<rowSize);
+    assert(col<this->headers_.size());
+    char *p = (char *)this->data + this->rowSize*row + this->cShift_[col];
+    switch (this->cTypes_[col])
+    {
+        case String:
+        {
+            char *s = (char*)p;
+            strncpy(s, str.c_str(), this->cSizes_[col]);
+            break;
+        }
+        case Integer:
+        {
+            int *v = (int*)p;
+            *v = stoi(str);
+            break;
+        }
+        case Float:
+        {
+            double *v = (double *)p;
+            *v = stod(str);
+            break;
+        }
+        default:
+        {
+            cerr << "type not handled." << endl;
+            abort();
+        }
+    }
+}
+
+
+int Dataset::int_cell(size_t row, size_t col) const
+{
+    assert(row<rowSize);
+    assert(col<this->headers_.size());
+    assert(this->cTypes_[col]==Integer);
+    char *p = (char *)this->data + this->rowSize*row + this->cShift_[col];
+    int *v = (int *)p;
+    return *v;
+}
+
+double
+Dataset::float_cell (size_t row, size_t col) const
+{
+    assert(row<rowSize);
+    assert(col<this->headers_.size());
+    assert(this->cTypes_[col]==Float);
+    char *p = (char *)this->data + this->rowSize*row + this->cShift_[col];
+    double *v = (double *)p;
+    return *v;
+}
+
+const char*
+Dataset::str_cell (size_t row, size_t col) const
+{
+    assert(row<rowSize);
+    assert(col<this->headers_.size());
+    assert(this->cTypes_[col]==String);
+    char *p = (char *)this->data + this->rowSize*row + this->cShift_[col];
+    const char *s = (const char *)p;
+    return s;
 }
 
 Dataset::~Dataset()
@@ -245,4 +372,3 @@ Dataset::~Dataset()
     if (this->data)
         free(this->data);
 }
-

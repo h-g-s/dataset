@@ -22,16 +22,37 @@ enum Datatype { Char=0,
 class Dataset {
 public:
 	Dataset(const char *fileName);
+
+	int rows() const { return rows_; }
+
+	const std::vector<std::string> &headers() const {
+	    return headers_;
+	}
+
+	const std::vector<Datatype> &types() const {
+	    return cTypes_;
+	}
+
+    int int_cell(size_t row, size_t col) const;
+
+    double float_cell(size_t row, size_t col) const;
+
+    const char *str_cell(size_t row, size_t col) const;
+
+    // sets the cell contents, converting to the
+    // column type
+    void cell_set(size_t row, size_t col, const std::string &str);
+
 	virtual ~Dataset();
-
-        std::vector< std::string > headers;
-
-        std::vector< enum Datatype > cTypes;
-        std::vector< size_t > cSizes; // in bytes
 private:
+        std::vector< std::string > headers_;
+
+        std::vector< enum Datatype > cTypes_;
+        std::vector< size_t > cSizes_; // in bytes
+        std::vector< size_t > cShift_; // in bytes
         size_t rowSize;
-        void *data;
-        size_t rows;
+        char *data;
+        size_t rows_;
 };
 
 #endif /* DATASET_HPP_ */
