@@ -10,6 +10,7 @@
 
 #include <string>
 #include <vector>
+#include <map>
 
 enum Datatype { Char=0, 
                 Short, 
@@ -23,7 +24,7 @@ class Dataset {
 public:
 	Dataset(const char *fileName);
 
-	int rows() const { return rows_; }
+	size_t rows() const { return rows_; }
 
 	const std::vector<std::string> &headers() const {
 	    return headers_;
